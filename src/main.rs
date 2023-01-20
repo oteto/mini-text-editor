@@ -1,9 +1,7 @@
-use std::time::Duration;
+mod editor;
 
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent},
-    terminal,
-};
+use crossterm::terminal;
+use editor::Editor;
 
 struct CleanUp;
 
@@ -14,28 +12,10 @@ impl Drop for CleanUp {
 }
 
 fn main() -> crossterm::Result<()> {
-    let _clean_up = CleanUp;
-    terminal::enable_raw_mode()?;
+    let mut editor = Editor::new();
+    editor.init()?;
 
-    loop {
-        if !event::poll(Duration::from_millis(500))? {
-            println!("No input yet\r");
-            continue;
-        }
-
-        if let Event::Key(event) = event::read()? {
-            match event {
-                KeyEvent {
-                    code: KeyCode::Char('q'),
-                    modifiers: event::KeyModifiers::NONE,
-                    kind: _,
-                    state: _,
-                } => break,
-                _ => {}
-            }
-            println!("{:?}\r", event);
-        }
-    }
+    while editor.run()? {}
 
     Ok(())
 }
