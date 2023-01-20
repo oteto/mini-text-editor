@@ -25,7 +25,7 @@ impl StatusMessage {
         })
     }
 
-    fn set_message(&mut self, message: String) {
+    pub fn set_message(&mut self, message: String) {
         self.message = Some(message);
         self.set_time = Some(Instant::now())
     }

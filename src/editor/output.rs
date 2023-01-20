@@ -14,6 +14,7 @@ pub struct Output {
     cursor_controller: CursorController,
     editor_rows: EditorRows,
     status_message: StatusMessage,
+    dirty: u64,
 }
 
 impl Output {
@@ -26,7 +27,8 @@ impl Output {
             editor_contents: EditorContents::new(),
             cursor_controller: CursorController::new(win_size),
             editor_rows: EditorRows::new(),
-            status_message: StatusMessage::new("HELP: Ctrl-Q = Quit".into()),
+            status_message: StatusMessage::new("HELP: Ctrl-S = Save | Ctrl-Q = Quit ".into()),
+            dirty: 0,
         }
     }
 
@@ -81,6 +83,83 @@ impl Output {
         })
     }
 
+    pub fn insert_char(&mut self, ch: char) {
+        if self.cursor_controller.cursor_y == self.editor_rows.number_of_row() {
+            self.editor_rows
+                .insert_row(self.editor_rows.number_of_row(), String::new());
+            self.dirty += 1;
+        }
+        self.editor_rows
+            .get_editor_row_mut(self.cursor_controller.cursor_y)
+            .insert_char(self.cursor_controller.cursor_x, ch);
+        self.cursor_controller.cursor_x += 1;
+        self.dirty += 1;
+    }
+
+    pub fn insert_newline(&mut self) {
+        if self.cursor_controller.cursor_x == 0 {
+            self.editor_rows
+                .insert_row(self.cursor_controller.cursor_y, String::new());
+        } else {
+            let current_row = self
+                .editor_rows
+                .get_editor_row_mut(self.cursor_controller.cursor_y);
+            let new_row_content = current_row.row_content[self.cursor_controller.cursor_x..].into();
+            current_row
+                .row_content
+                .truncate(self.cursor_controller.cursor_x);
+            EditorRows::render_row(current_row);
+            self.editor_rows
+                .insert_row(self.cursor_controller.cursor_y + 1, new_row_content);
+        }
+        self.cursor_controller.cursor_x = 0;
+        self.cursor_controller.cursor_y += 1;
+        self.dirty += 1;
+    }
+
+    pub fn delete_char(&mut self) {
+        if self.cursor_controller.cursor_y == self.editor_rows.number_of_row() {
+            return;
+        }
+
+        if self.cursor_controller.cursor_y == 0 && self.cursor_controller.cursor_x == 0 {
+            return;
+        }
+
+        let row = self
+            .editor_rows
+            .get_editor_row_mut(self.cursor_controller.cursor_y);
+        if self.cursor_controller.cursor_x > 0 {
+            row.delete_char(self.cursor_controller.cursor_x - 1);
+            self.cursor_controller.cursor_x -= 1;
+        } else {
+            let previous_row_content = self
+                .editor_rows
+                .get_row(self.cursor_controller.cursor_y - 1);
+            self.cursor_controller.cursor_x = previous_row_content.len();
+            self.editor_rows
+                .join_adjacent_rows(self.cursor_controller.cursor_y);
+            self.cursor_controller.cursor_y -= 1;
+        }
+        self.dirty += 1;
+    }
+
+    pub fn save(&mut self) -> crossterm::Result<()> {
+        self.editor_rows.save().map(|len| {
+            self.status_message
+                .set_message(format!("{} bytes written to disk", len));
+            self.dirty = 0
+        })
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty > 0
+    }
+
+    pub fn set_message(&mut self, message: String) {
+        self.status_message.set_message(message)
+    }
+
     fn draw_rows(&mut self) {
         let screen_row = self.win_size.1;
         let screen_column = self.win_size.0;
@@ -132,8 +211,9 @@ impl Output {
             .push_str(&style::Attribute::Reverse.to_string());
 
         let info = format!(
-            "{} -- {} lines",
+            "{} {} -- {} lines",
             self.editor_rows.filename(),
+            if self.dirty > 0 { "(modified)" } else { "" },
             self.editor_rows.number_of_row()
         );
         let info_len = info.len().min(self.win_size.0);

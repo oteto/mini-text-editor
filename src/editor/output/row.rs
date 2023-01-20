@@ -1,10 +1,14 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    io::{self, Write},
+    path::PathBuf,
+};
 
 const TAB_STOP: usize = 8;
 
 pub struct EditorRows {
     row_contents: Vec<Row>,
-    filename: Option<PathBuf>,
+    pub filename: Option<PathBuf>,
 }
 
 impl EditorRows {
@@ -59,7 +63,45 @@ impl EditorRows {
         &self.row_contents[at].render
     }
 
-    fn render_row(row: &mut Row) {
+    pub fn insert_row(&mut self, at: usize, contents: String) {
+        let mut new_row = Row::new(contents, String::new());
+        EditorRows::render_row(&mut new_row);
+        self.row_contents.insert(at, new_row);
+    }
+
+    pub fn get_editor_row_mut(&mut self, at: usize) -> &mut Row {
+        &mut self.row_contents[at]
+    }
+
+    pub fn save(&self) -> io::Result<usize> {
+        match &self.filename {
+            None => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "no file name specified",
+            )),
+            Some(name) => {
+                let mut file = fs::OpenOptions::new().write(true).create(true).open(name)?;
+                let contents: String = self
+                    .row_contents
+                    .iter()
+                    .map(|it| it.row_content.as_str())
+                    .collect::<Vec<&str>>()
+                    .join("\n");
+                file.set_len(contents.len() as u64)?;
+                file.write_all(contents.as_bytes())?;
+                Ok(contents.as_bytes().len())
+            }
+        }
+    }
+
+    pub fn join_adjacent_rows(&mut self, at: usize) {
+        let current_row = self.row_contents.remove(at);
+        let previous_row = self.get_editor_row_mut(at - 1);
+        previous_row.row_content.push_str(&current_row.row_content);
+        Self::render_row(previous_row);
+    }
+
+    pub fn render_row(row: &mut Row) {
         let mut index = 0;
         let capacity = row
             .row_content
@@ -81,16 +123,27 @@ impl EditorRows {
     }
 }
 
+#[derive(Default)]
 pub struct Row {
-    pub row_content: Box<str>,
+    pub row_content: String,
     render: String,
 }
 
 impl Row {
-    fn new(row_content: Box<str>, render: String) -> Self {
+    fn new(row_content: String, render: String) -> Self {
         Self {
             row_content,
             render,
         }
+    }
+
+    pub fn insert_char(&mut self, at: usize, ch: char) {
+        self.row_content.insert(at, ch);
+        EditorRows::render_row(self);
+    }
+
+    pub fn delete_char(&mut self, at: usize) {
+        self.row_content.remove(at);
+        EditorRows::render_row(self);
     }
 }
