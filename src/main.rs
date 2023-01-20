@@ -12,7 +12,7 @@ impl Drop for CleanUp {
 }
 
 fn main() -> crossterm::Result<()> {
-    let editor = Editor::new();
+    let mut editor = Editor::new();
     editor.init()?;
 
     while editor.run()? {}
