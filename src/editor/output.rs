@@ -1,5 +1,6 @@
 mod cursor;
 mod row;
+mod search;
 mod status;
 
 use std::io::{self, stdout, Write};
@@ -9,6 +10,7 @@ use crossterm::{event::KeyCode, execute, queue, style, terminal};
 use crate::editor::{KeyEvent, KeyModifiers, Reader};
 use crate::prompt;
 
+use self::search::{SearchDirection, SearchIndex};
 use self::{cursor::CursorController, row::EditorRows, status::StatusMessage};
 
 pub struct Output {
@@ -18,6 +20,7 @@ pub struct Output {
     editor_rows: EditorRows,
     status_message: StatusMessage,
     dirty: u64,
+    search_index: SearchIndex,
 }
 
 impl Output {
@@ -30,8 +33,11 @@ impl Output {
             editor_contents: EditorContents::new(),
             cursor_controller: CursorController::new(win_size),
             editor_rows: EditorRows::new(),
-            status_message: StatusMessage::new("HELP: Ctrl-S = Save | Ctrl-Q = Quit ".into()),
+            status_message: StatusMessage::new(
+                "HELP: Ctrl-S = Save | Ctrl-Q = Quit | Ctrl-F = Find".into(),
+            ),
             dirty: 0,
+            search_index: SearchIndex::new(),
         }
     }
 
@@ -170,6 +176,101 @@ impl Output {
 
     pub fn set_message(&mut self, message: String) {
         self.status_message.set_message(message)
+    }
+
+    pub fn find(&mut self) -> io::Result<()> {
+        let cursor_controller = self.cursor_controller;
+        if prompt!(
+            self,
+            "Search: {} (Use ESC / Arrows / Enter)",
+            callback = Output::find_callback
+        )
+        .is_none()
+        {
+            self.cursor_controller = cursor_controller;
+        }
+        Ok(())
+    }
+
+    fn find_callback(output: &mut Output, keyword: &str, key_code: KeyCode) {
+        match key_code {
+            KeyCode::Esc | KeyCode::Enter => {
+                output.search_index.reset();
+            }
+            _ => {
+                output.search_index.y_direction = None;
+                output.search_index.x_direction = None;
+                match key_code {
+                    KeyCode::Down => {
+                        output.search_index.y_direction = SearchDirection::Forward.into();
+                    }
+                    KeyCode::Up => {
+                        output.search_index.y_direction = SearchDirection::Backward.into();
+                    }
+                    KeyCode::Left => {
+                        output.search_index.x_direction = SearchDirection::Backward.into();
+                    }
+                    KeyCode::Right => {
+                        output.search_index.x_direction = SearchDirection::Forward.into();
+                    }
+                    _ => {}
+                }
+
+                for i in 0..output.editor_rows.number_of_row() {
+                    let row_index = match output.search_index.y_direction.as_ref() {
+                        None => {
+                            if output.search_index.x_direction.is_none() {
+                                output.search_index.y_index = i;
+                            }
+                            output.search_index.y_index
+                        }
+                        Some(dir) => {
+                            if matches!(dir, SearchDirection::Forward) {
+                                output.search_index.y_index + i + 1
+                            } else {
+                                let res = output.search_index.y_index.saturating_sub(i);
+                                if res == 0 {
+                                    break;
+                                }
+                                res - 1
+                            }
+                        }
+                    };
+
+                    if row_index > output.editor_rows.number_of_row() - 1 {
+                        break;
+                    }
+
+                    let row = output.editor_rows.get_editor_row(row_index);
+                    let index = match output.search_index.x_direction.as_ref() {
+                        None => row.find(&keyword),
+                        Some(dir) => {
+                            let index = if matches!(dir, SearchDirection::Forward) {
+                                let start = row.len().min(output.search_index.x_index + 1);
+                                row.render[start..]
+                                    .find(&keyword)
+                                    .map(|index| index + start)
+                            } else {
+                                row.render[..output.search_index.x_index].rfind(&keyword)
+                            };
+                            if index.is_none() {
+                                break;
+                            }
+                            index
+                        }
+                    };
+
+                    if let Some(index) = index {
+                        output.cursor_controller.cursor_y = row_index;
+                        output.search_index.y_index = row_index;
+                        output.search_index.x_index = index;
+                        output.cursor_controller.cursor_x = row.get_row_content_x(index);
+                        output.cursor_controller.row_offset = output.editor_rows.number_of_row();
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     fn draw_rows(&mut self) {

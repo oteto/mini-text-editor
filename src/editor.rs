@@ -58,6 +58,11 @@ impl Editor {
                 ..
             } => self.output.save()?,
             KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers: event::KeyModifiers::CONTROL,
+                ..
+            } => self.output.find()?,
+            KeyEvent {
                 code:
                     direction @ (KeyCode::Up
                     | KeyCode::Left
@@ -129,36 +134,41 @@ impl Reader {
 
 #[macro_export]
 macro_rules! prompt {
-    ($output:expr,$($args:tt)*) => {{
-        let output:&mut Output = $output;
+    ($output:expr,$args:tt) => {
+        prompt!($output, $args, callback = |_: &_, _: _, _: _| {})
+    };
+    ($output:expr,$args:tt,callback = $callback:expr) => {{
+        let output: &mut Output = $output;
         let mut input = String::with_capacity(32);
         loop {
-            output.set_message(format!($($args)*, input));
+            output.set_message(format!($args, input));
             output.refresh_screen()?;
-            match Reader.read_key()? {
+            let key_event = Reader.read_key()?;
+            match key_event {
                 KeyEvent {
-                    code:KeyCode::Enter,
-                    modifiers:KeyModifiers::NONE,
+                    code: KeyCode::Enter,
+                    modifiers: KeyModifiers::NONE,
                     ..
                 } => {
                     if !input.is_empty() {
                         output.set_message(String::new());
+                        $callback(output, &input, KeyCode::Enter);
                         break;
                     }
                 }
                 KeyEvent {
-                    code: KeyCode::Esc,
-                    ..
+                    code: KeyCode::Esc, ..
                 } => {
                     output.set_message(String::new());
                     input.clear();
+                    $callback(output, &input, KeyCode::Esc);
                     break;
                 }
                 KeyEvent {
                     code: KeyCode::Backspace | KeyCode::Delete,
                     modifiers: KeyModifiers::NONE,
                     ..
-                } =>  {
+                } => {
                     input.pop();
                 }
                 KeyEvent {
@@ -166,13 +176,18 @@ macro_rules! prompt {
                     modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                     ..
                 } => input.push(match code {
-                        KeyCode::Tab => '\t',
-                        KeyCode::Char(ch) => ch,
-                        _ => unreachable!(),
-                    }),
-                _=> {}
+                    KeyCode::Tab => '\t',
+                    KeyCode::Char(ch) => ch,
+                    _ => unreachable!(),
+                }),
+                _ => {}
             }
+            $callback(output, &input, key_event.code);
         }
-        if input.is_empty() { None } else { Some (input) }
+        if input.is_empty() {
+            None
+        } else {
+            Some(input)
+        }
     }};
 }

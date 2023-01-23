@@ -126,7 +126,7 @@ impl EditorRows {
 #[derive(Default)]
 pub struct Row {
     pub row_content: String,
-    render: String,
+    pub render: String,
 }
 
 impl Row {
@@ -145,5 +145,27 @@ impl Row {
     pub fn delete_char(&mut self, at: usize) {
         self.row_content.remove(at);
         EditorRows::render_row(self);
+    }
+
+    pub fn find(&self, keyword: &str) -> Option<usize> {
+        self.render.find(keyword)
+    }
+
+    pub fn len(&self) -> usize {
+        self.render.len()
+    }
+
+    pub fn get_row_content_x(&self, render_x: usize) -> usize {
+        let mut current_render_x = 0;
+        for (cursor_x, ch) in self.row_content.chars().enumerate() {
+            if ch == '\t' {
+                current_render_x += (TAB_STOP - 1) - (current_render_x % TAB_STOP);
+            }
+            current_render_x += 1;
+            if current_render_x > render_x {
+                return cursor_x;
+            }
+        }
+        0
     }
 }

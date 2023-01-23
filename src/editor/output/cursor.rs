@@ -6,6 +6,7 @@ use super::row::{EditorRows, Row};
 
 const TAB_STOP: usize = 8;
 
+#[derive(Copy, Clone)]
 pub struct CursorController {
     pub cursor_x: usize,
     pub cursor_y: usize,
