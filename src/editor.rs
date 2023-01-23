@@ -138,6 +138,8 @@ macro_rules! prompt {
         prompt!($output, $args, callback = |_: &_, _: _, _: _| {})
     };
     ($output:expr,$args:tt,callback = $callback:expr) => {{
+        use crate::editor::{KeyEvent, KeyModifiers, Reader};
+
         let output: &mut Output = $output;
         let mut input = String::with_capacity(32);
         loop {

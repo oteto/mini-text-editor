@@ -4,15 +4,17 @@ use std::{
     path::PathBuf,
 };
 
+use super::highlight::{HighlightType, SyntaxHighlight};
+
 const TAB_STOP: usize = 8;
 
 pub struct EditorRows {
-    row_contents: Vec<Row>,
+    pub row_contents: Vec<Row>,
     pub filename: Option<PathBuf>,
 }
 
 impl EditorRows {
-    pub fn new() -> Self {
+    pub fn new(syntax_highlight: Option<&dyn SyntaxHighlight>) -> Self {
         let mut arg = env::args();
 
         match arg.nth(1) {
@@ -20,7 +22,7 @@ impl EditorRows {
                 row_contents: Vec::new(),
                 filename: None,
             },
-            Some(file) => Self::from_file(file.into()),
+            Some(file) => Self::from_file(file.into(), syntax_highlight),
         }
     }
 
@@ -44,18 +46,20 @@ impl EditorRows {
         &self.row_contents[at].row_content
     }
 
-    fn from_file(file: PathBuf) -> Self {
+    fn from_file(file: PathBuf, syntax_highlight: Option<&dyn SyntaxHighlight>) -> Self {
         let file_contents = fs::read_to_string(&file).expect("Unable to read file");
+        let mut row_contents = Vec::new();
+        file_contents.lines().enumerate().for_each(|(i, line)| {
+            let mut row = Row::new(line.into(), String::new());
+            Self::render_row(&mut row);
+            row_contents.push(row);
+            if let Some(it) = syntax_highlight {
+                it.update_syntax(i, &mut row_contents)
+            }
+        });
         Self {
             filename: Some(file),
-            row_contents: file_contents
-                .lines()
-                .map(|it| {
-                    let mut row = Row::new(it.into(), String::new());
-                    Self::render_row(&mut row);
-                    row
-                })
-                .collect(),
+            row_contents,
         }
     }
 
@@ -127,6 +131,7 @@ impl EditorRows {
 pub struct Row {
     pub row_content: String,
     pub render: String,
+    pub highlight: Vec<HighlightType>,
 }
 
 impl Row {
@@ -134,6 +139,7 @@ impl Row {
         Self {
             row_content,
             render,
+            highlight: Vec::new(),
         }
     }
 

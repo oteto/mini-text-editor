@@ -1,18 +1,23 @@
+#![allow(unused)]
+
 mod cursor;
+mod highlight;
 mod row;
 mod search;
 mod status;
 
 use std::io::{self, stdout, Write};
 
+use crossterm::style::*;
 use crossterm::{event::KeyCode, execute, queue, style, terminal};
 
-use crate::editor::{KeyEvent, KeyModifiers, Reader};
-use crate::prompt;
+use crate::{prompt, syntax_struct};
 
+use self::highlight::SyntaxHighlight;
 use self::search::{SearchDirection, SearchIndex};
 use self::{cursor::CursorController, row::EditorRows, status::StatusMessage};
 
+syntax_struct! {struct RustHighlight;}
 pub struct Output {
     win_size: (usize, usize),
     editor_contents: EditorContents,
@@ -21,6 +26,7 @@ pub struct Output {
     status_message: StatusMessage,
     dirty: u64,
     search_index: SearchIndex,
+    syntax_highlight: Option<Box<dyn SyntaxHighlight>>,
 }
 
 impl Output {
@@ -28,16 +34,18 @@ impl Output {
         let win_size = terminal::size()
             .map(|(x, y)| (x as usize, y as usize - 2))
             .unwrap();
+        let syntax_highlight: Option<Box<dyn SyntaxHighlight>> = Some(Box::new(RustHighlight));
         Self {
             win_size,
             editor_contents: EditorContents::new(),
             cursor_controller: CursorController::new(win_size),
-            editor_rows: EditorRows::new(),
+            editor_rows: EditorRows::new(syntax_highlight.as_deref()),
             status_message: StatusMessage::new(
                 "HELP: Ctrl-S = Save | Ctrl-Q = Quit | Ctrl-F = Find".into(),
             ),
             dirty: 0,
             search_index: SearchIndex::new(),
+            syntax_highlight,
         }
     }
 
@@ -101,6 +109,14 @@ impl Output {
         self.editor_rows
             .get_editor_row_mut(self.cursor_controller.cursor_y)
             .insert_char(self.cursor_controller.cursor_x, ch);
+
+        if let Some(it) = self.syntax_highlight.as_ref() {
+            it.update_syntax(
+                self.cursor_controller.cursor_y,
+                &mut self.editor_rows.row_contents,
+            )
+        }
+
         self.cursor_controller.cursor_x += 1;
         self.dirty += 1;
     }
@@ -120,6 +136,17 @@ impl Output {
             EditorRows::render_row(current_row);
             self.editor_rows
                 .insert_row(self.cursor_controller.cursor_y + 1, new_row_content);
+
+            if let Some(it) = self.syntax_highlight.as_ref() {
+                it.update_syntax(
+                    self.cursor_controller.cursor_y,
+                    &mut self.editor_rows.row_contents,
+                );
+                it.update_syntax(
+                    self.cursor_controller.cursor_y + 1,
+                    &mut self.editor_rows.row_contents,
+                )
+            }
         }
         self.cursor_controller.cursor_x = 0;
         self.cursor_controller.cursor_y += 1;
@@ -149,6 +176,12 @@ impl Output {
             self.editor_rows
                 .join_adjacent_rows(self.cursor_controller.cursor_y);
             self.cursor_controller.cursor_y -= 1;
+        }
+        if let Some(it) = self.syntax_highlight.as_ref() {
+            it.update_syntax(
+                self.cursor_controller.cursor_y,
+                &mut self.editor_rows.row_contents,
+            );
         }
         self.dirty += 1;
     }
@@ -288,11 +321,22 @@ impl Output {
                 }
             } else {
                 // ファイルコンテンツの描画
-                let row = self.editor_rows.get_render(file_row);
+                let row = self.editor_rows.get_editor_row(file_row);
+                let render = &row.render;
                 let column_offset = self.cursor_controller.column_offset;
                 let len = row.len().saturating_sub(column_offset).min(screen_column);
                 let start = if len == 0 { 0 } else { column_offset };
-                self.editor_contents.push_str(&row[start..start + len]);
+
+                self.syntax_highlight
+                    .as_ref()
+                    .map(|syntax_highlight| {
+                        syntax_highlight.color_row(
+                            &render[start..start + len],
+                            &row.highlight[start..start + len],
+                            &mut self.editor_contents,
+                        )
+                    })
+                    .unwrap_or_else(|| self.editor_contents.push_str(&render[start..start + len]));
             }
 
             queue!(
@@ -365,7 +409,7 @@ impl Output {
     }
 }
 
-struct EditorContents {
+pub struct EditorContents {
     content: String,
 }
 
