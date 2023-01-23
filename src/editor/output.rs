@@ -6,6 +6,9 @@ use std::io::{self, stdout, Write};
 
 use crossterm::{event::KeyCode, execute, queue, style, terminal};
 
+use crate::editor::{KeyEvent, KeyModifiers, Reader};
+use crate::prompt;
+
 use self::{cursor::CursorController, row::EditorRows, status::StatusMessage};
 
 pub struct Output {
@@ -145,6 +148,15 @@ impl Output {
     }
 
     pub fn save(&mut self) -> crossterm::Result<()> {
+        if matches!(self.editor_rows.filename, None) {
+            let prompt = prompt!(self, "Save as : {}").map(|it| it.into());
+            if let None = prompt {
+                self.set_message("Save Aborted".into());
+                return Ok(());
+            }
+            self.editor_rows.filename = prompt;
+        }
+
         self.editor_rows.save().map(|len| {
             self.status_message
                 .set_message(format!("{} bytes written to disk", len));

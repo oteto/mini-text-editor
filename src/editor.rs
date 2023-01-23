@@ -40,8 +40,7 @@ impl Editor {
             KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers: event::KeyModifiers::CONTROL,
-                kind: _,
-                state: _,
+                ..
             } => {
                 if self.output.is_dirty() && self.quit_times > 0 {
                     self.output.set_message(format!(
@@ -56,8 +55,7 @@ impl Editor {
             KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: event::KeyModifiers::CONTROL,
-                kind: _,
-                state: _,
+                ..
             } => self.output.save()?,
             KeyEvent {
                 code:
@@ -68,20 +66,17 @@ impl Editor {
                     | KeyCode::Home
                     | KeyCode::End),
                 modifiers: KeyModifiers::NONE,
-                kind: _,
-                state: _,
+                ..
             } => self.output.move_cursor(direction),
             KeyEvent {
                 code: val @ (KeyCode::PageUp | KeyCode::PageDown),
                 modifiers: KeyModifiers::NONE,
-                kind: _,
-                state: _,
+                ..
             } => self.output.page_up_down(val),
             KeyEvent {
                 code: code @ (KeyCode::Char(..) | KeyCode::Tab),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
-                kind: _,
-                state: _,
+                ..
             } => self.output.insert_char(match code {
                 KeyCode::Tab => '\t',
                 KeyCode::Char(ch) => ch,
@@ -90,8 +85,7 @@ impl Editor {
             KeyEvent {
                 code: key @ (KeyCode::Backspace | KeyCode::Delete),
                 modifiers: KeyModifiers::NONE,
-                kind: _,
-                state: _,
+                ..
             } => {
                 if matches!(key, KeyCode::Delete) {
                     self.output.move_cursor(KeyCode::Right)
@@ -101,8 +95,7 @@ impl Editor {
             KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::NONE,
-                kind: _,
-                state: _,
+                ..
             } => self.output.insert_newline(),
             _ => {}
         }
@@ -132,4 +125,54 @@ impl Reader {
             }
         }
     }
+}
+
+#[macro_export]
+macro_rules! prompt {
+    ($output:expr,$($args:tt)*) => {{
+        let output:&mut Output = $output;
+        let mut input = String::with_capacity(32);
+        loop {
+            output.set_message(format!($($args)*, input));
+            output.refresh_screen()?;
+            match Reader.read_key()? {
+                KeyEvent {
+                    code:KeyCode::Enter,
+                    modifiers:KeyModifiers::NONE,
+                    ..
+                } => {
+                    if !input.is_empty() {
+                        output.set_message(String::new());
+                        break;
+                    }
+                }
+                KeyEvent {
+                    code: KeyCode::Esc,
+                    ..
+                } => {
+                    output.set_message(String::new());
+                    input.clear();
+                    break;
+                }
+                KeyEvent {
+                    code: KeyCode::Backspace | KeyCode::Delete,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } =>  {
+                    input.pop();
+                }
+                KeyEvent {
+                    code: code @ (KeyCode::Char(..) | KeyCode::Tab),
+                    modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                    ..
+                } => input.push(match code {
+                        KeyCode::Tab => '\t',
+                        KeyCode::Char(ch) => ch,
+                        _ => unreachable!(),
+                    }),
+                _=> {}
+            }
+        }
+        if input.is_empty() { None } else { Some (input) }
+    }};
 }
