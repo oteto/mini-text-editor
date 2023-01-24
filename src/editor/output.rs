@@ -7,6 +7,7 @@ mod search;
 mod status;
 
 use std::io::{self, stdout, Write};
+use std::path::PathBuf;
 
 use crossterm::style::*;
 use crossterm::{event::KeyCode, execute, queue, style, terminal};
@@ -17,7 +18,10 @@ use self::highlight::SyntaxHighlight;
 use self::search::{SearchDirection, SearchIndex};
 use self::{cursor::CursorController, row::EditorRows, status::StatusMessage};
 
-syntax_struct! {struct RustHighlight;}
+syntax_struct! {
+    struct RustHighlight {extensions: ["rs"]}
+}
+
 pub struct Output {
     win_size: (usize, usize),
     editor_contents: EditorContents,
@@ -34,12 +38,12 @@ impl Output {
         let win_size = terminal::size()
             .map(|(x, y)| (x as usize, y as usize - 2))
             .unwrap();
-        let syntax_highlight: Option<Box<dyn SyntaxHighlight>> = Some(Box::new(RustHighlight));
+        let mut syntax_highlight = None;
         Self {
             win_size,
             editor_contents: EditorContents::new(),
             cursor_controller: CursorController::new(win_size),
-            editor_rows: EditorRows::new(syntax_highlight.as_deref()),
+            editor_rows: EditorRows::new(&mut syntax_highlight),
             status_message: StatusMessage::new(
                 "HELP: Ctrl-S = Save | Ctrl-Q = Quit | Ctrl-F = Find".into(),
             ),
@@ -193,6 +197,20 @@ impl Output {
                 self.set_message("Save Aborted".into());
                 return Ok(());
             }
+
+            prompt
+                .as_ref()
+                .and_then(|path: &PathBuf| path.extension())
+                .and_then(|ext| ext.to_str())
+                .map(|ext| {
+                    Output::select_syntax(ext).map(|syntax| {
+                        let highlight = self.syntax_highlight.insert(syntax);
+                        for i in 0..self.editor_rows.number_of_row() {
+                            highlight.update_syntax(i, &mut self.editor_rows.row_contents);
+                        }
+                    })
+                });
+
             self.editor_rows.filename = prompt;
         }
 
@@ -225,7 +243,17 @@ impl Output {
         Ok(())
     }
 
+    pub fn select_syntax(extension: &str) -> Option<Box<dyn SyntaxHighlight>> {
+        let list: Vec<Box<dyn SyntaxHighlight>> = vec![Box::new(RustHighlight::new())];
+        list.into_iter()
+            .find(|it| it.extensions().contains(&extension))
+    }
+
     fn find_callback(output: &mut Output, keyword: &str, key_code: KeyCode) {
+        if let Some((index, highlight)) = output.search_index.previous_highlight.take() {
+            output.editor_rows.get_editor_row_mut(index).highlight = highlight;
+        }
+
         match key_code {
             KeyCode::Esc | KeyCode::Enter => {
                 output.search_index.reset();
@@ -274,7 +302,7 @@ impl Output {
                         break;
                     }
 
-                    let row = output.editor_rows.get_editor_row(row_index);
+                    let row = output.editor_rows.get_editor_row_mut(row_index);
                     let index = match output.search_index.x_direction.as_ref() {
                         None => row.find(&keyword),
                         Some(dir) => {
@@ -294,6 +322,13 @@ impl Output {
                     };
 
                     if let Some(index) = index {
+                        output.search_index.previous_highlight =
+                            Some((row_index, row.highlight.clone()));
+
+                        (index..index + keyword.len()).for_each(|index| {
+                            row.highlight[index] = HighlightType::SearchMatch;
+                        });
+
                         output.cursor_controller.cursor_y = row_index;
                         output.search_index.y_index = row_index;
                         output.search_index.x_index = index;

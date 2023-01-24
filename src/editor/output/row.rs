@@ -4,7 +4,10 @@ use std::{
     path::PathBuf,
 };
 
-use super::highlight::{HighlightType, SyntaxHighlight};
+use super::{
+    highlight::{HighlightType, SyntaxHighlight},
+    Output,
+};
 
 const TAB_STOP: usize = 8;
 
@@ -14,7 +17,7 @@ pub struct EditorRows {
 }
 
 impl EditorRows {
-    pub fn new(syntax_highlight: Option<&dyn SyntaxHighlight>) -> Self {
+    pub fn new(syntax_highlight: &mut Option<Box<dyn SyntaxHighlight>>) -> Self {
         let mut arg = env::args();
 
         match arg.nth(1) {
@@ -46,9 +49,14 @@ impl EditorRows {
         &self.row_contents[at].row_content
     }
 
-    fn from_file(file: PathBuf, syntax_highlight: Option<&dyn SyntaxHighlight>) -> Self {
+    fn from_file(file: PathBuf, syntax_highlight: &mut Option<Box<dyn SyntaxHighlight>>) -> Self {
         let file_contents = fs::read_to_string(&file).expect("Unable to read file");
         let mut row_contents = Vec::new();
+
+        file.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| Output::select_syntax(ext).map(|syntax| syntax_highlight.insert(syntax)));
+
         file_contents.lines().enumerate().for_each(|(i, line)| {
             let mut row = Row::new(line.into(), String::new());
             Self::render_row(&mut row);

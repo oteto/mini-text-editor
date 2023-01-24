@@ -1,3 +1,5 @@
+use super::highlight::HighlightType;
+
 pub enum SearchDirection {
     Forward,
     Backward,
@@ -8,6 +10,7 @@ pub struct SearchIndex {
     pub y_index: usize,
     pub x_direction: Option<SearchDirection>,
     pub y_direction: Option<SearchDirection>,
+    pub previous_highlight: Option<(usize, Vec<HighlightType>)>,
 }
 
 impl SearchIndex {
@@ -17,6 +20,7 @@ impl SearchIndex {
             y_index: 0,
             x_direction: None,
             y_direction: None,
+            previous_highlight: None,
         }
     }
 
@@ -25,5 +29,6 @@ impl SearchIndex {
         self.y_index = 0;
         self.x_direction = None;
         self.y_direction = None;
+        self.previous_highlight = None;
     }
 }
