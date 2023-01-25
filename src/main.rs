@@ -11,6 +11,7 @@ impl Drop for CleanUp {
     }
 }
 
+// comment
 fn main() -> crossterm::Result<()> {
     let mut editor = Editor::new();
     editor.init()?;

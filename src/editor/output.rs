@@ -19,7 +19,21 @@ use self::search::{SearchDirection, SearchIndex};
 use self::{cursor::CursorController, row::EditorRows, status::StatusMessage};
 
 syntax_struct! {
-    struct RustHighlight {extensions: ["rs"]}
+    struct RustHighlight {
+        extensions: ["rs"],
+        file_type: "rust",
+        comment_start: "//",
+        keywords : {
+            [Color::Red;
+                "mod","unsafe","extern","crate","use","type","struct","enum","union","const","static",
+                "mut","let","if","else","impl","trait","for","fn","self","Self", "while", "true","false",
+                "in","continue","break","loop","match"
+            ],
+            [Color::Reset; "isize","i8","i16","i32","i64","usize","u8","u16","u32","u64","f32","f64",
+                "char","str","bool"
+            ]
+        }
+    }
 }
 
 pub struct Output {
@@ -409,8 +423,13 @@ impl Output {
             self.editor_rows.number_of_row()
         );
         let info_len = info.len().min(self.win_size.0);
+
         let line_info = format!(
-            "{}/{}",
+            "{} | {}/{}",
+            self.syntax_highlight
+                .as_ref()
+                .map(|highlight| highlight.file_type())
+                .unwrap_or("no ft"),
             self.cursor_controller.cursor_y + 1,
             self.editor_rows.number_of_row()
         );
